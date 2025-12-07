@@ -499,7 +499,8 @@
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app';
         const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-        const apiKey = ""; 
+        // 注意：將 API Key 暴露在前端程式碼中存在風險，請務必在 Google Cloud Console 中設定 HTTP Referrer 限制，只允許您的 GitHub Pages 網域使用。
+        const apiKey = "AIzaSyChWE_r98G1FoQ0Irc-hdUs_rtrpnaDtP4"; 
         let app, db, auth, userId;
         
         window.state = {
