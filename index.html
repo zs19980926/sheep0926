@@ -22,6 +22,29 @@
     <!-- 載入 Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
     
+    <!-- 錯誤攔截器 (放在最前面以捕捉模組載入錯誤) -->
+    <script>
+        window.onerror = function(msg, url, lineNo, columnNo, error) {
+            const container = document.getElementById('error-display');
+            if (container) {
+                container.style.display = 'block';
+                container.innerHTML += `<p class="mb-2">❌ 錯誤: ${msg} <br><span class="text-xs text-slate-400">Line: ${lineNo}</span></p>`;
+            }
+            // 不要 alert，避免無限迴圈，但在移動端方便看到
+            console.error('Global Error:', msg, error);
+            return false;
+        };
+        
+        // 處理未捕獲的 Promise 錯誤
+        window.addEventListener('unhandledrejection', function(event) {
+            const container = document.getElementById('error-display');
+            if (container) {
+                container.style.display = 'block';
+                container.innerHTML += `<p class="mb-2">⚠️ 非同步錯誤: ${event.reason}</p>`;
+            }
+        });
+    </script>
+
     <script>
         // 動態生成 Manifest (包含您的設定與圖示)
         document.addEventListener('DOMContentLoaded', () => {
@@ -176,9 +199,27 @@
             padding-right: 1.5rem !important;
             color: white;
         }
+        
+        /* 錯誤顯示區塊 */
+        #error-display {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: rgba(220, 38, 38, 0.95);
+            color: white;
+            padding: 10px;
+            font-size: 12px;
+            z-index: 9999;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
     </style>
 </head>
 <body class="min-h-screen pb-24 md:pb-8">
+
+    <div id="error-display"></div>
 
     <!-- Toast 容器 -->
     <div id="toast-container"></div>
@@ -276,6 +317,7 @@
                     <div id="itinerary-status" class="flex justify-center items-center h-40">
                         <p class="text-secondary" id="itinerary-loading">載入中...</p>
                         <p class="text-secondary hidden" id="itinerary-empty">尚未有任何行程，點擊上方按鈕新增！</p>
+                        <button onclick="window.showSetupModal()" class="hidden text-xs text-blue-400 underline mt-4" id="force-setup-btn">手動開啟設定</button>
                     </div>
 
                     <div id="itinerary-days-container" class="space-y-8"></div>
@@ -492,9 +534,10 @@
 
     <!-- Firebase -->
     <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, onSnapshot, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        // 使用穩定的 Firebase 版本 (10.12.2) 避免 GitHub Pages 載入失敗 (404)
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
         // =================================================================================
         //  GitHub / Vercel 部署設定區
@@ -999,6 +1042,9 @@
             if (!hasConfig) {
                 // 如果沒有設定，顯示 Setup Modal
                 window.showSetupModal();
+                // 顯示手動設定按鈕，以防 Modal 被關掉
+                const setupBtn = document.getElementById('force-setup-btn');
+                if(setupBtn) setupBtn.classList.remove('hidden');
                 return;
             }
 
@@ -1028,7 +1074,11 @@
                 });
             } catch (e) { 
                 console.error("Firebase Init Error", e);
-                alert("Firebase 初始化失敗，請檢查設定是否正確。\n" + e.message);
+                const container = document.getElementById('error-display');
+                if (container) {
+                    container.style.display = 'block';
+                    container.innerHTML += `<p class="mb-2">🔥 Firebase 初始化失敗: ${e.message}</p>`;
+                }
                 window.showSetupModal(); // 重試設定
             }
         }
