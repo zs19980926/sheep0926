@@ -496,13 +496,63 @@
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app';
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-        // 注意：將 API Key 暴露在前端程式碼中存在風險，請務必在 Google Cloud Console 中設定 HTTP Referrer 限制，只允許您的 GitHub Pages 網域使用。
-        const apiKey = "AIzaSyChWE_r98G1FoQ0Irc-hdUs_rtrpnaDtP4"; 
+        // =================================================================================
+        //  GitHub / Vercel 部署設定區
+        //  請填寫您的 Firebase 設定物件 (從 Firebase Console -> Project Settings -> General -> Your apps 複製)
+        // =================================================================================
+        const MANUAL_FIREBASE_CONFIG = {
+             // apiKey: "請填入您的 API Key",
+             // authDomain: "您的專案ID.firebaseapp.com",
+             // projectId: "您的專案ID",
+             // storageBucket: "您的專案ID.appspot.com",
+             // messagingSenderId: "...",
+             // appId: "..."
+        };
+
+        const MANUAL_APP_ID = "my-japan-trip-v1"; // 可自訂您的 APP ID，方便資料區隔
+        // =================================================================================
+
+        const apiKey = "AIzaSyChWE_r98G1FoQ0Irc-hdUs_rtrpnaDtP4"; // Gemini API Key (注意: 此為公開 Key)
         let app, db, auth, userId;
-        
+        let appId, firebaseConfig, initialAuthToken;
+
+        // --- Config Detection Logic ---
+        function detectConfig() {
+            // 1. 嘗試讀取注入的環境變數 (Preview 環境)
+            if (typeof __firebase_config !== 'undefined') {
+                firebaseConfig = JSON.parse(__firebase_config);
+                appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app';
+                initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+                console.log("Using injected config (Preview Mode)");
+                return true;
+            }
+            
+            // 2. 嘗試讀取手動設定 (GitHub / Standalone)
+            if (MANUAL_FIREBASE_CONFIG.apiKey) {
+                firebaseConfig = MANUAL_FIREBASE_CONFIG;
+                appId = MANUAL_APP_ID;
+                initialAuthToken = null; // GitHub 無法使用預先簽署的 token
+                console.log("Using manual config (Production Mode)");
+                return true;
+            }
+
+            // 3. 嘗試讀取 LocalStorage 快取 (避免每次都要輸入)
+            const cachedConfig = localStorage.getItem('japan_trip_firebase_config');
+            if (cachedConfig) {
+                try {
+                    firebaseConfig = JSON.parse(cachedConfig);
+                    appId = localStorage.getItem('japan_trip_app_id') || 'my-japan-trip-cached';
+                    console.log("Using cached config");
+                    return true;
+                } catch(e) {
+                    console.error("Invalid cached config", e);
+                    localStorage.removeItem('japan_trip_firebase_config');
+                }
+            }
+
+            return false;
+        }
+
         window.state = {
             tripTitle: '🌸 日本旅遊規劃器',
             itineraries: [],
@@ -564,8 +614,16 @@
                                     </button>
                                 </div>
                             </div>
+                            
+                            <!-- 3. 重設 Config (如果是在 GitHub 上) -->
+                            <div class="border-b border-slate-700 pb-4">
+                                <label class="block text-xs text-secondary mb-2">系統連線設定</label>
+                                <button onclick="window.resetFirebaseConfig()" class="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-600 rounded-lg text-sm transition">
+                                    重設 Firebase 連線資訊
+                                </button>
+                            </div>
 
-                            <!-- 3. 封存/重置 -->
+                            <!-- 4. 封存/重置 -->
                             <div>
                                 <label class="block text-xs text-red-400 mb-2 font-bold">危險區域</label>
                                 <button onclick="window.archiveTrip()" class="w-full py-3 bg-red-900/30 hover:bg-red-900/50 text-red-400 border border-red-800 rounded-lg text-sm flex items-center justify-center transition">
@@ -587,6 +645,13 @@
                 saveData('tripTitle', newTitle);
                 DOM.tripTitleDisplay.textContent = newTitle;
                 showToast('標題已更新');
+            }
+        }
+        
+        window.resetFirebaseConfig = () => {
+            if (confirm("確定要重設連線資訊嗎？這會清除您目前瀏覽器儲存的 Firebase 設定。")) {
+                localStorage.removeItem('japan_trip_firebase_config');
+                window.location.reload();
             }
         }
 
@@ -725,6 +790,55 @@
             };
             
             if (window.lucide) window.lucide.createIcons();
+        }
+        
+        // --- SHOW SETUP MODAL ---
+        window.showSetupModal = () => {
+            const html = `
+                <div id="modal-setup" class="fixed inset-0 bg-black flex items-center justify-center z-[100] p-4">
+                    <div class="card-bg w-full max-w-md rounded-2xl p-6 shadow-2xl border border-blue-500">
+                        <div class="text-center mb-6">
+                            <h2 class="text-xl font-bold text-white mb-2">🚀 初始化設定</h2>
+                            <p class="text-slate-400 text-sm">偵測到您正在 GitHub/外部環境執行。</p>
+                            <p class="text-slate-400 text-sm">請輸入您的 Firebase 設定以啟動 App。</p>
+                        </div>
+                        <form id="setup-form" class="space-y-4">
+                            <textarea id="setup-json" rows="8" placeholder='請貼上 Firebase Config JSON，例如：
+{
+  "apiKey": "...",
+  "authDomain": "...",
+  "projectId": "..."
+}' class="w-full bg-slate-800 border-slate-600 rounded-lg p-3 text-white text-xs font-mono"></textarea>
+                            
+                            <div class="bg-blue-900/20 p-3 rounded border border-blue-800 text-xs text-blue-200">
+                                💡 提示：您可以將設定直接寫入 index.html 的 <code>MANUAL_FIREBASE_CONFIG</code> 變數中，即可跳過此步驟。
+                            </div>
+
+                            <button type="submit" class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg shadow-lg transition">啟動 App</button>
+                        </form>
+                    </div>
+                </div>
+            `;
+            const div = document.createElement('div');
+            div.innerHTML = html;
+            document.body.appendChild(div);
+            
+            document.getElementById('setup-form').onsubmit = (e) => {
+                e.preventDefault();
+                try {
+                    const jsonStr = document.getElementById('setup-json').value;
+                    const config = JSON.parse(jsonStr);
+                    if(!config.apiKey || !config.projectId) throw new Error("缺少必要欄位");
+                    
+                    localStorage.setItem('japan_trip_firebase_config', JSON.stringify(config));
+                    localStorage.setItem('japan_trip_app_id', 'my-japan-trip-manual');
+                    
+                    showToast("設定已儲存，正在重新整理...");
+                    setTimeout(() => window.location.reload(), 1000);
+                } catch(err) {
+                    alert("設定格式錯誤，請確保是有效的 JSON。\n" + err.message);
+                }
+            };
         }
 
         // --- GEMINI HELPER ---
@@ -878,21 +992,46 @@
             } catch (e) { showToast("AI 生成失敗", "error"); }
         }
 
-        // --- Firebase ---
-        try {
-            app = initializeApp(firebaseConfig);
-            db = getFirestore(app);
-            auth = getAuth(app);
-            DOM.appIdDisplay.textContent = appId;
-        } catch (e) { console.error(e); }
-
-        onAuthStateChanged(auth, async (user) => {
-            if (user) { userId = user.uid; listenToData(); }
-            else { 
-                if (initialAuthToken) await signInWithCustomToken(auth, initialAuthToken);
-                else await signInAnonymously(auth);
+        // --- Firebase Initialization ---
+        async function initApp() {
+            const hasConfig = detectConfig();
+            
+            if (!hasConfig) {
+                // 如果沒有設定，顯示 Setup Modal
+                window.showSetupModal();
+                return;
             }
-        });
+
+            try {
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                DOM.appIdDisplay.textContent = appId;
+
+                onAuthStateChanged(auth, async (user) => {
+                    if (user) { 
+                        userId = user.uid; 
+                        listenToData(); 
+                    } else { 
+                        try {
+                            if (initialAuthToken) {
+                                await signInWithCustomToken(auth, initialAuthToken);
+                            } else {
+                                // GitHub 環境使用匿名登入
+                                await signInAnonymously(auth);
+                            }
+                        } catch (err) {
+                            console.error("Auth Error", err);
+                            alert("Firebase 驗證失敗。請確認您的 Firebase Console 中已開啟「匿名登入 (Anonymous Auth)」功能。\n" + err.message);
+                        }
+                    }
+                });
+            } catch (e) { 
+                console.error("Firebase Init Error", e);
+                alert("Firebase 初始化失敗，請檢查設定是否正確。\n" + e.message);
+                window.showSetupModal(); // 重試設定
+            }
+        }
 
         function listenToData() {
             const ref = doc(db, 'artifacts', appId, 'users', userId, 'japan_trip', 'data');
@@ -919,6 +1058,11 @@
                     window.state.packingList = pl;
                 } else { setDoc(ref, window.state, { merge: true }); }
                 renderAll();
+            }, (error) => {
+                console.error("Snapshot error:", error);
+                if (error.code === 'permission-denied') {
+                    showToast("權限錯誤：請確認 Firebase Firestore Rules 已設定為公開或正確。", "error");
+                }
             });
         }
 
@@ -1982,6 +2126,8 @@
             renderPackingList();
         }
 
+        // Start App
+        initApp();
         updateIcons();
     </script>
 </body>
